@@ -50,7 +50,40 @@
 #define GET(p) (*(unsigned int *)(p))
 #define PUT(p, val) (*(unsigned int *)(p) = (val))
 
-/* 从头部或脚部读取大小 */
+/* 从头部或脚部读取大小和分配位 */
+#define GET_SIZE(p) (GET(p) & ~0x7)
+#define GET_ALLOC(p) (GET(p) & 0x1)
+
+/* 给定 payload 指针 bp，计算出头部和尾部的位置 */
+#define HDRP(bp) ((char *)(bp) - WSIZE) /* 一个 header 占 4 字节 */
+#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
+
+/* 给定 bp，计算上一个块或下一个块的 bp */
+#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE((char *)(bp) - WSIZE)) /* bp 加上当前块大小 */
+#define PREV_BLOP(bp) ((char *)(bp) - GET_SIZE((char *)(bp) - WSIZE))
+
+static char *heap_listp; /* 指向堆的起始位置 */
+
+/* 向系统申请堆内存，当堆内存不够时使用 */
+static void *extend_heap(size_t words) {
+    char *bp;
+    size_t size;
+
+    /* 保证申请的字节是与 8 对齐的 */
+    size = (words % 2) ? (words + 1) * WSIZE : words * WSIZE;
+
+    /* 调用 mem_sbrk 申请空间 */
+    /* 这里 bp 指向原来的堆顶，也就是尾块的后面，此时回退 WSIZE 就到了尾块的开头 */
+    if ((long)(bp = memsbrk(size)) == -1) {
+        return NULL;
+    }
+
+    /* 初始化堆，其中有一个序言块，只包含 header 和 footer */
+    /* 由于 8 字节对齐，每个 header 的开始都需要是 8n + 4，所以需要有 WSIZE 的 padding */
+    /* 最后还有一个 WSIZE 的尾块，内容为 0/1 */
+    /* 覆盖先前的尾部 */
+    PUT(HDRP(bp), PACK(size, 0))
+}
 
 
 /*
