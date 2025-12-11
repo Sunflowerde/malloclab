@@ -123,12 +123,10 @@ static void *coalesce(void *bp) {
     /* 前面空闲后面被占用 */
     else if (!prev_alloc && next_alloc) {
         size += GET_SIZE(FTRP(PREV_BLKP(bp)));
-        /* 更新当前尾部 */
-        PUT(FTRP(bp), PACK(size, 0));
-        /* 更新前一个头部 */
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
         /* 更新 bp */
         bp = PREV_BLKP(bp);
+        PUT(HDRP(bp), PACK(size, 0));
+        PUT(FTRP(bp), PACK(size, 0));
     }
 
     /* 前后均空闲 */
@@ -146,8 +144,9 @@ static void *coalesce(void *bp) {
 static void *find_fit(size_t asize) {
     void *bp;
 
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && asize >= GET_SIZE(HDRP(bp))) {
+    /* 直接从第一个块开始，避免检查序言块 */
+    for (bp = NEXT_BLKP(heap_listp); GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && GET_SIZE(HDRP(bp)) >= asize) {
             return bp;
         }
     }
@@ -213,7 +212,7 @@ void *malloc (size_t size) {
 
     /* 忽略无效请求 */
     if (size == 0) {
-        return;
+        return NULL;
     }
 
     /* 调整块大小 */
@@ -221,9 +220,8 @@ void *malloc (size_t size) {
     if (size <= DSIZE) {
         asize = 2 * DSIZE;
     } else {
-        asize = DSIZE * (size + DSIZE + (DSIZE - 1) / DSIZE);
+        asize = DSIZE * ((size + DSIZE + (DSIZE - 1)) / DSIZE);
     }
-    
     /* 先搜索空闲链表 */
     if ((bp = find_fit(asize)) != NULL) {
         place(bp, asize);
