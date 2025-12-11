@@ -60,7 +60,7 @@
 
 /* 给定 bp，计算上一个块或下一个块的 bp */
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE((char *)(bp) - WSIZE)) /* bp 加上当前块大小 */
-#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE((char *)(bp) - WSIZE))
+#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE((char *)(bp) - DSIZE))
 
 static char *heap_listp; /* 指向堆的起始位置 */
 
@@ -169,8 +169,8 @@ static void place(void *bp, size_t asize) {
     }
     /* 如果剩余内存不够大 */
     else {
-        PUT(HDRP(bp), PACK(asize, 1));
-        PUT(FTRP(bp), PACK(asize, 1));
+        PUT(HDRP(bp), PACK(csize, 1));
+        PUT(FTRP(bp), PACK(csize, 1));
     }
 }
 
@@ -187,8 +187,8 @@ int mm_init(void) {
     /* 第一个 padding 全为 0 */
     PUT(heap_listp, 0);
     /* 序言块的 header 和 footer */
-    PUT(heap_listp + 1 * WSIZE, PACK(8, 0));
-    PUT(heap_listp + 2 * WSIZE, PACK(8, 0));
+    PUT(heap_listp + 1 * WSIZE, PACK(DSIZE, 1));
+    PUT(heap_listp + 2 * WSIZE, PACK(DSIZE, 1));
     /* 尾块 */
     PUT(heap_listp + 3 * WSIZE, PACK(0, 1));
 
@@ -207,14 +207,56 @@ int mm_init(void) {
  * malloc
  */
 void *malloc (size_t size) {
-    return NULL;
+    size_t asize; /* 需要实际分配的内存大小 */
+    size_t extendsize;
+    char *bp;
+
+    /* 忽略无效请求 */
+    if (size == 0) {
+        return;
+    }
+
+    /* 调整块大小 */
+    /* 如果申请分配的内存比 2 个字小，就向上对齐到 4 个字，因为最少要 4 个字，头尾占 2 个字 */
+    if (size <= DSIZE) {
+        asize = 2 * DSIZE;
+    } else {
+        asize = DSIZE * (size + DSIZE + (DSIZE - 1) / DSIZE);
+    }
+    
+    /* 先搜索空闲链表 */
+    if ((bp = find_fit(asize)) != NULL) {
+        place(bp, asize);
+        return bp;
+    }
+
+    /* 如果没找到合适的块，需要向系统申请更多的内存 */
+    extendsize = MAX(asize, CHUNKSIZE);
+    if ((bp = extend_heap(extendsize / WSIZE)) == NULL) {
+        return NULL;
+    }
+
+    /* 分配好后再重新放入分配好的块 */
+    place(bp, asize);
+
+    return bp;
 }
 
 /*
  * free
  */
 void free (void *ptr) {
-    if(!ptr) return;
+    if (ptr == NULL) {
+        return;
+    }
+    
+    /* 修改分配位 */
+    size_t size = GET_SIZE(HDRP(ptr));
+    PUT(HDRP(ptr), PACK(size, 0));
+    PUT(FTRP(ptr), PACK(size, 0));
+
+    /* 与相邻块进行合并 */
+    coalesce(ptr);
 }
 
 /*
