@@ -60,12 +60,14 @@
 
 /* 给定 bp，计算上一个块或下一个块的 bp */
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE((char *)(bp) - WSIZE)) /* bp 加上当前块大小 */
-#define PREV_BLOP(bp) ((char *)(bp) - GET_SIZE((char *)(bp) - WSIZE))
+#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE((char *)(bp) - WSIZE))
 
 static char *heap_listp; /* 指向堆的起始位置 */
 
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
+static void *find_fit(size_t asize);
+static void place(void *bp, size_t asize);
 
 /* 向系统申请堆内存，当堆内存不够时使用 */
 /* 这里的参数表示申请多少个字的内存，而不是字节 */
@@ -96,8 +98,80 @@ static void *extend_heap(size_t words) {
     return coalesce(bp);
 }
 
+/* 合并空闲块，分 4 种情况处理 */
 static void *coalesce(void *bp) {
+    /* 获取前后块的分配状态 */
+    size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
+    size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
+    
+    /* 当前块的大小 */
+    size_t size = GET_SIZE(HDRP(bp));
+
+    /* 只有当前面块发生合并时才需要移动 bp */
+    /* 前后都被占用 */
+    if (prev_alloc && next_alloc) {
+        return bp;
+    }
+    /* 前面被占用后面空闲 */
+    else if (prev_alloc && !next_alloc) {
+        /* 更新块大小 */
+        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        /* 更新头部和尾部 */
+        PUT(HDRP(bp), PACK(size, 0));
+        PUT(FTRP(bp), PACK(size, 0)); /* 脚部的更新依赖于头部 */
+    }
+    /* 前面空闲后面被占用 */
+    else if (!prev_alloc && next_alloc) {
+        size += GET_SIZE(FTRP(PREV_BLKP(bp)));
+        /* 更新当前尾部 */
+        PUT(FTRP(bp), PACK(size, 0));
+        /* 更新前一个头部 */
+        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+        /* 更新 bp */
+        bp = PREV_BLKP(bp);
+    }
+
+    /* 前后均空闲 */
+    else if (!prev_alloc && !next_alloc) {
+        size += GET_SIZE(FTRP(PREV_BLKP(bp))) + GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+        PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
+        bp = PREV_BLKP(bp);
+    }
+
     return bp;
+}
+
+/* 找到第一个满足条件的内存块 */
+static void *find_fit(size_t asize) {
+    void *bp;
+
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && asize >= GET_SIZE(HDRP(bp))) {
+            return bp;
+        }
+    }
+
+    return NULL;
+}
+
+static void place(void *bp, size_t asize) {
+    size_t csize = GET_SIZE(HDRP(bp));
+
+    /* 如果能分配出一个小块，就把他拆分 */
+    if ((csize - asize) >= (2 * DSIZE)) {
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
+        /* 更新被分割出的小块 */
+        bp = NEXT_BLKP(bp);
+        PUT(HDRP(bp), PACK(csize - asize, 0));
+        PUT(FTRP(bp), PACK(csize - asize, 0));
+    }
+    /* 如果剩余内存不够大 */
+    else {
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
+    }
 }
 
 /*
