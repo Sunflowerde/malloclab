@@ -82,9 +82,19 @@ static void *extend_heap(size_t words) {
     /* 由于 8 字节对齐，每个 header 的开始都需要是 8n + 4，所以需要有 WSIZE 的 padding */
     /* 最后还有一个 WSIZE 的尾块，内容为 0/1 */
     /* 覆盖先前的尾部 */
-    PUT(HDRP(bp), PACK(size, 0))
+    /* 创建一个大的空闲块 */
+    PUT(HDRP(bp), PACK(size, 0));
+    PUT(FTRP(bp), PACK(size, 0));
+    /* 创建尾块 */
+    PUT(HDBP(NEXT_BLKP(bp)), PACK(0, 1));
+
+    /* 如果前一个块是空闲的，就把他俩合并 */
+    return coalesce(bp);
 }
 
+static void *coalesce(void *bp) {
+    return bp;
+}
 
 /*
  * Initialize: return -1 on error, 0 on success.
