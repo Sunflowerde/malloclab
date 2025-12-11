@@ -64,7 +64,11 @@
 
 static char *heap_listp; /* 指向堆的起始位置 */
 
+static void *extend_heap(size_t words);
+static void *coalesce(void *bp);
+
 /* 向系统申请堆内存，当堆内存不够时使用 */
+/* 这里的参数表示申请多少个字的内存，而不是字节 */
 static void *extend_heap(size_t words) {
     char *bp;
     size_t size;
@@ -74,7 +78,7 @@ static void *extend_heap(size_t words) {
 
     /* 调用 mem_sbrk 申请空间 */
     /* 这里 bp 指向原来的堆顶，也就是尾块的后面，此时回退 WSIZE 就到了尾块的开头 */
-    if ((long)(bp = memsbrk(size)) == -1) {
+    if ((long)(bp = mem_sbrk(size)) == -1) {
         return NULL;
     }
 
@@ -86,7 +90,7 @@ static void *extend_heap(size_t words) {
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
     /* 创建尾块 */
-    PUT(HDBP(NEXT_BLKP(bp)), PACK(0, 1));
+    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1));
 
     /* 如果前一个块是空闲的，就把他俩合并 */
     return coalesce(bp);
@@ -100,6 +104,28 @@ static void *coalesce(void *bp) {
  * Initialize: return -1 on error, 0 on success.
  */
 int mm_init(void) {
+    /* 先申请 4 个字的空间给 padding，序言块，尾块 */
+    /* 此时 heap_listp 指向堆的最开头 */
+    if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void *)-1) {
+        return -1;
+    }
+
+    /* 第一个 padding 全为 0 */
+    PUT(heap_listp, 0);
+    /* 序言块的 header 和 footer */
+    PUT(heap_listp + 1 * WSIZE, PACK(8, 0));
+    PUT(heap_listp + 2 * WSIZE, PACK(8, 0));
+    /* 尾块 */
+    PUT(heap_listp + 3 * WSIZE, PACK(0, 1));
+
+    /* 让 heap_listp 指向序言块的 header 和 footer 的中间 */
+    heap_listp += 2 * WSIZE;
+
+    /* 然后扩展一大块内存 */
+    if (extend_heap(CHUNKSIZE / WSIZE) == NULL) {
+        return -1;
+    }
+
     return 0;
 }
 
