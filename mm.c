@@ -260,8 +260,40 @@ void free (void *ptr) {
 /*
  * realloc - you may want to look at mm-naive.c
  */
+
+/* 重新分配内存块大小 */
 void *realloc(void *oldptr, size_t size) {
-    return NULL;
+    void *newptr;
+    size_t oldsize;
+
+    /* 如果 oldptr 为 NULL，相当于 malloc */
+    if (oldptr == NULL) {
+        return malloc(size);
+    }
+
+    /* 如果 size 为 0，相当于 free */
+    if (size == 0) {
+        free(oldptr);
+        return NULL;
+    }
+
+    /* 分配新块 */
+    newptr = malloc(size);
+    if (newptr == NULL) {
+        return NULL;
+    }
+
+    /* 复制旧数据到新块 */
+    oldsize = GET_SIZE(HDRP(oldptr)) - DSIZE;
+    /* 如果要分配的内存小于旧块共有的内存，则只分配少的那部分 */
+    if (size < oldsize) {
+        oldsize = size;
+    }
+    memcpy(newptr, oldptr, oldsize);
+    /* 释放旧块 */
+    free(oldptr);
+
+    return newptr;
 }
 
 /*
@@ -270,7 +302,26 @@ void *realloc(void *oldptr, size_t size) {
  * needed to run the traces.
  */
 void *calloc (size_t nmemb, size_t size) {
-    return NULL;
+    size_t bytes;
+    void *ptr;
+
+    /* 检查总大小，防止溢出 */
+    bytes = nmemb * size;
+
+    /* 检查溢出 */
+    if (nmemb != 0 && bytes / nmemb != size) {
+        return NULL;
+    }
+
+    ptr = malloc(bytes);
+    if (ptr == NULL) {
+        return NULL;
+    }
+
+    /* 清零 */
+    memset(ptr, 0, bytes);
+
+    return ptr;
 }
 
 
